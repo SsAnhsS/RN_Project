@@ -3,21 +3,19 @@ package data;
 import java.io.*;
 import java.net.*;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 
+/**
+ * TCP Server 
+ */
 public class Server {
 	
 	private ServerSocket serverSocket;
-	private Management management; 
-	
-	BufferedReader reader;
-	DataOutputStream outToClient;
-	DataInputStream inFromClient;
 	
 	public Server() {
 		try {
 			this.serverSocket = new ServerSocket(6789);
-			management = new Management();
 			System.out.println("Wait for Client ...");
 		}catch (IOException e) {
 			e.printStackTrace();
@@ -25,23 +23,29 @@ public class Server {
 	}
 	
 	public void run_forever() {
-		try{
-			
-			while(true) {
+		while(true) {
+			try{
+
+				//HashMap<String, Integer> activeUsersList = new HashMap<>(); 
+				
 				Socket clientSocket = this.serverSocket.accept();
-				System.out.println("Client %s connected" + clientSocket.getRemoteSocketAddress());
+				System.out.printf("Client %s connected", clientSocket.getRemoteSocketAddress());
+				System.out.println();
 				Thread newThread = new ClientHandler(clientSocket);
 				newThread.start();
+				
+			}catch(IOException e) {
+				System.out.println("Connection with Client is closed!");
+				return;
 			}
-			
-		}catch(IOException e) {
-			e.printStackTrace();
 		}
+		
+		
 		
 	}
 	
 	public static void main(String [] args) {
-		Server server = new Server();
+		final Server server = new Server();
 		server.run_forever();
 	}
 }

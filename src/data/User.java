@@ -1,5 +1,8 @@
 package data;
 
+/**
+ * User Class
+ */
 public class User {
 	private String username;
 	private String password;
@@ -16,5 +19,7 @@ public class User {
 	public String getPasswort() {
 		return password;
 	}
+	
+	
 	
 }

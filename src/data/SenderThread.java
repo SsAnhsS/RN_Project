@@ -1,17 +1,50 @@
 package data;
 
-import java.io.BufferedReader;
-import java.net.DatagramSocket;
-import java.net.InetAddress;
-import java.net.Socket;
+import java.io.*;
+import java.net.*;
 
-public class SenderThread {
-	private BufferedReader reader;
-	private Socket socket;
-	private Client client;
+/**
+ * UDP Sender Thread
+ */
+public class SenderThread extends Thread{
+
+	private InetAddress ipAddress;
+	private int port;
 	
-	private InetAddress serverIPAddress;
 	private DatagramSocket udpClientSocket;
-	private boolean stopped = false; 
-	private int serverPort;
+	
+	
+	public SenderThread(int port, InetAddress ipAddress)throws SocketException{
+		this.port = port;
+		this.ipAddress = ipAddress;
+		
+		this.udpClientSocket = new DatagramSocket();
+		//this.udpClientSocket.connect(serverIPAddress, serverPort);
+	}
+	
+	public void run() {
+		try {
+			BufferedReader inFromUser = new BufferedReader(new InputStreamReader(System.in));
+			
+			String sendInput = inFromUser.readLine();
+			
+			sendMessage(sendInput);
+			
+		}catch(IOException e) {
+			e.printStackTrace();
+		}
+	}
+	
+	/**
+	 * message send
+	 * @param message
+	 * @throws IOException
+	 */
+	public void sendMessage(String message) throws IOException{
+		byte[] sendData = message.getBytes();
+		DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, ipAddress, port);
+		udpClientSocket.send(sendPacket);
+	}
+	
+	
 }

@@ -3,6 +3,9 @@ package data;
 import java.io.*;
 import java.net.*;
 
+/**
+ * TCP Client
+ */
 public class Client {
 	
 	Socket clientSocket;
@@ -12,18 +15,23 @@ public class Client {
 	BufferedReader inFromUser;
 	BufferedReader inFromServer;
 	
-
+	String name;
+	String portString;
+	
+	int hostPort;
+	int guestPort;
+	
 	String databaseFile = "database/database.txt";
+	String activeUsersFile = "database/activeUsers.txt";
 	BufferedReader fileReader;
+	BufferedWriter fileWriter;
+	
+	String localhost = "localhost";
 	
 	public Client() {
 		try {
 			clientSocket = new Socket("localhost", 6789);
 			
-			outToServer = new DataOutputStream(clientSocket.getOutputStream());
-			
-			inFromUser = new BufferedReader(new InputStreamReader(System.in));
-			inFromServer= new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
 			
 		} catch(IOException e) {
 			e.printStackTrace();
@@ -34,18 +42,27 @@ public class Client {
 		String command;
 		String message;
 		String username, passwort;
+		boolean isValid;
+		boolean isLogin = false;
+		
+		outToServer = new DataOutputStream(clientSocket.getOutputStream());
+		
+		inFromUser = new BufferedReader(new InputStreamReader(System.in));
+		inFromServer= new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
+		
 		
 		try {
+			System.out.println("Choose \"Register(R)\" | \"Login(LI)\"");
+			
 			do {
-				System.out.println("Client connected end with \"END\"");
-				System.out.println("Choose with \"Register(R)\", \"Login(LI)\" oder \"Logout(LO)\"");
+				
 				command = inFromUser.readLine();
 				
 				if(command != null) {
 					outToServer.writeBytes(command + '\n');
 					switch(command) {
 					case "R": case "Register":
-						boolean isValid = false;
+						isValid = false;
 						
 						message = inFromServer.readLine();
 						System.out.println(message);
@@ -53,7 +70,7 @@ public class Client {
 						while(!isValid) {
 							username = inFromUser.readLine();
 							
-							if(validCheck(username)) {
+							if(validCheckToRegister(username)) {
 								outToServer.writeBytes(username + '\n');
 								isValid = true;
 							}
@@ -74,14 +91,37 @@ public class Client {
 						outToServer.writeBytes(confirm + '\n');
 						message = inFromServer.readLine();
 						System.out.println("FROM SERVER: " + message);
+						
+						if(message.equals("OK")) {
+							System.out.println("Register successfull!");
+							System.out.println("Choose \"Login(LI)\"");
+						}
+						else {
+							System.out.println("Choose \"Register(R)\" | \"Login(LI)\"");
+						}
+						
 						break;
 						
 					case "LI": case "Login":
-						while(true) {
+						//Error: after login, choose login, then choose logout or another command, unstopped error happends!
+						while(!isLogin) {
+							isValid = false;
+							
 							message = inFromServer.readLine();
 							System.out.println(message);
-							username = inFromUser.readLine();
-							outToServer.writeBytes(username + '\n');
+							//check that username was used or not
+							while(!isValid) {
+								username = inFromUser.readLine();
+								
+								if(activeUserCheck(username)) {
+									outToServer.writeBytes(username + '\n');
+									isValid = true;
+								}
+								else {
+									System.out.println("Usename was logged! Login with another!");
+									isValid = false;
+								}
+							}
 							
 							message = inFromServer.readLine();
 							System.out.println(message);
@@ -92,25 +132,98 @@ public class Client {
 							System.out.println("FROM SERVER: " + message);
 							
 							if(message.equals("OK")) {
+								System.out.println("Login successfull!");
+								
+								String port = inFromServer.readLine();
+								System.out.println("FROM SERVER: " + port);
+								
+								isLogin = true;
+								
+								System.out.println();
+								System.out.println("Choose \"Chat(C)\" | \"Logout(LO)\"");
 								break;
 							}
+							else {
+								isLogin = false;
+								System.out.println("Login failed. Please try again.");
+								continue;
+							}
 						}
+			
 						break;
 						
 					case "LO": case "Logout":
+						
+						String portString = String.valueOf(getPort(clientSocket.getRemoteSocketAddress()));
+						
+						outToServer.writeBytes(portString + '\n');
+						
+						message = inFromServer.readLine();
+						System.out.println("FROM SERVER: " + message);
+						
+						if(message.equals("OK")) {
+							System.out.println("You hat logged out!");
+							System.out.println();
+						}
+						
+						break;
+						
+					case "C": case "Chat":
+						message = inFromServer.readLine();
+						System.out.println("FROM SERVER: " + message);
+						message = inFromServer.readLine();
+						System.out.println("FROM SERVER: " + message);
+						
+						
+						String guestName = null;
+						
+	
+						guestName = inFromUser.readLine();
+						
+						outToServer.writeBytes(guestName + '\n');
+						
+						message = inFromServer.readLine();
+						
+						System.out.println("FROM SERVER: " + message);
+						String confirmCommand = null;
+						
+						do {
+							confirmCommand = inFromUser.readLine();
+							
+							switch (confirmCommand) {
+							case "Y": case "Yes": case "N": case "No":
+								outToServer.writeBytes(confirmCommand + '\n');
+								break;
+							default:
+								System.out.println("Unknown command!");
+								break;
+							}
+						}while(!confirmCommand.equals("Y") && !confirmCommand.equals("Yes") && !confirmCommand.equals("N") && !confirmCommand.equals("No"));
+						
+						message = inFromServer.readLine();
+						System.out.println("FROM SERVER: " + message);
+						
+						message = inFromServer.readLine();
+						hostPort = Integer.parseInt(message);
+						
+						message = inFromServer.readLine();
+						guestPort = Integer.parseInt(message);
+						
+						chat(hostPort, guestPort);
+						
+						
+						
 						break;
 					default:
 						System.out.println("Unknow command!");
 						break;
 					}
-					
-					System.out.println();
 				}
 				
-				
-				
-			} while(!command.equals("END"));
+			} while(!command.equals("LO") && !command.equals("Logout"));
 			
+			clientSocket.shutdownOutput();
+			clientSocket.shutdownInput();
 			clientSocket.close();
 			
 		} 
@@ -120,6 +233,8 @@ public class Client {
 		finally {
 			if(clientSocket != null && !clientSocket.isClosed()) {
 				try {
+					clientSocket.shutdownOutput();
+					clientSocket.shutdownInput();
 					clientSocket.close();
 				}
 				catch(IOException e) {
@@ -130,26 +245,83 @@ public class Client {
 		
 	}
 	
+	
+	/**
+	 *
+	 * @param hostPort
+	 * @param guestPort
+	 * @throws UnknownHostException
+	 * @throws SocketException
+	 */
+	public void chat(int hostPort, int guestPort) throws UnknownHostException, SocketException {
+		InetAddress ia = InetAddress.getByName(localhost);
+		
+		SenderThread sender = new SenderThread(guestPort, ia);
+		ReceiverThread receiver = new ReceiverThread(hostPort, ia);
+		
+		sender.start();
+		receiver.start();
+	}
+	
+	/**
+	 * check username is valid for register
+	 * @param username
+	 * @return
+	 * @throws IOException
+	 */
+	public boolean validCheckToRegister(String username) throws IOException {
+		if(username != null) {
+			fileReader = new BufferedReader(new FileReader(databaseFile));
+			String fileLine = null;
+			
+			while((fileLine = fileReader.readLine())!= null) {
+				if(username.equals(fileLine.split(" ")[0])) {
+					fileReader.close();
+					return false;
+				}
+				
+			}
+			fileReader.close();
+			return true;
+		}
+		else return false;
+	}
+	
+	/**
+	 * check user is active or not to login
+	 * @param username
+	 * @return
+	 * @throws IOException
+	 */
+	public boolean activeUserCheck(String username) throws IOException {
+		if(username != null) {
+			fileReader = new BufferedReader(new FileReader(activeUsersFile));
+			String fileLine = null;
+			
+			while((fileLine = fileReader.readLine())!= null) {
+				if(username.equals(fileLine.split(" ")[0])) {
+					fileReader.close();
+					return false;
+				}
+			}
+			fileReader.close();
+			return true;
+		}
+		else return false;
+	}
+	
+	/**
+	 * get portnumber of user
+	 * @param address
+	 * @return
+	 */
+	public int getPort(SocketAddress address) {
+	    return ((InetSocketAddress) address).getPort();
+	}
+	
 	public static void main(String[] args) throws Exception{
 		Client client = new Client();
 		client.run();
 	}
-	
-	public boolean validCheck(String username) throws Exception {
-		fileReader = new BufferedReader(new FileReader(databaseFile));
-		String fileLine = fileReader.readLine();
-		
-		while(fileLine != null) {
-			if(username.equals(fileLine.split(" ")[0])) {
-				fileReader.close();
-				return false;
-			}
-			fileLine = fileReader.readLine();
-		}
-		
-		fileReader.close();
-		return true;
-	}
-	
 	
 }
