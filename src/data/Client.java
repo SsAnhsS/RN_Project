@@ -43,7 +43,6 @@ public class Client {
 		String message;
 		String username, passwort;
 		boolean isValid;
-		boolean isLogin = false;
 		
 		outToServer = new DataOutputStream(clientSocket.getOutputStream());
 		
@@ -56,6 +55,8 @@ public class Client {
 			
 			do {
 				
+				System.out.println("Command: ");
+				//Because the another client id still here, that why can't receive the invite from another 
 				command = inFromUser.readLine();
 				
 				if(command != null) {
@@ -103,8 +104,8 @@ public class Client {
 						break;
 						
 					case "LI": case "Login":
-						//Error: after login, choose login, then choose logout or another command, unstopped error happends!
-						while(!isLogin) {
+						
+						while(true) {
 							isValid = false;
 							
 							message = inFromServer.readLine();
@@ -113,7 +114,7 @@ public class Client {
 							while(!isValid) {
 								username = inFromUser.readLine();
 								
-								if(activeUserCheck(username)) {
+								if(!activeUserCheck(username)) {
 									outToServer.writeBytes(username + '\n');
 									isValid = true;
 								}
@@ -134,29 +135,21 @@ public class Client {
 							if(message.equals("OK")) {
 								System.out.println("Login successfull!");
 								
-								String port = inFromServer.readLine();
-								System.out.println("FROM SERVER: " + port);
-								
-								isLogin = true;
-								
 								System.out.println();
 								System.out.println("Choose \"Chat(C)\" | \"Logout(LO)\"");
 								break;
 							}
 							else {
-								isLogin = false;
 								System.out.println("Login failed. Please try again.");
 								continue;
 							}
 						}
+							
+						
 			
 						break;
 						
 					case "LO": case "Logout":
-						
-						String portString = String.valueOf(getPort(clientSocket.getRemoteSocketAddress()));
-						
-						outToServer.writeBytes(portString + '\n');
 						
 						message = inFromServer.readLine();
 						System.out.println("FROM SERVER: " + message);
@@ -177,8 +170,11 @@ public class Client {
 						
 						String guestName = null;
 						
-	
-						guestName = inFromUser.readLine();
+						do {
+							System.out.println("Your guest username: ");
+							guestName = inFromUser.readLine();
+						} while(!activeUserCheck(guestName));
+						
 						
 						outToServer.writeBytes(guestName + '\n');
 						
@@ -203,27 +199,29 @@ public class Client {
 						message = inFromServer.readLine();
 						System.out.println("FROM SERVER: " + message);
 						
-						message = inFromServer.readLine();
-						hostPort = Integer.parseInt(message);
-						
-						message = inFromServer.readLine();
-						guestPort = Integer.parseInt(message);
-						
-						chat(hostPort, guestPort);
-						
-						
-						
 						break;
 					default:
 						System.out.println("Unknow command!");
 						break;
 					}
+					
 				}
+			
+				//when the client receive the invite, can accept to connect with the sender
+				if((message = inFromServer.readLine()).equals("INVITE")) {
+					String confirm = null;
+					message = inFromServer.readLine();
+					System.out.println("FROM SERVER: " + message);
+					do {
+						confirm = inFromUser.readLine();
+					}while(!confirm.equals("Y") && !confirm.equals("N") && !confirm.equals("Yes") && !confirm.equals("N0") );
+					
+					outToServer.writeBytes(confirm);
+				}else continue;
+				
 				
 			} while(!command.equals("LO") && !command.equals("Logout"));
 			
-			clientSocket.shutdownOutput();
-			clientSocket.shutdownInput();
 			clientSocket.close();
 			
 		} 
@@ -233,8 +231,6 @@ public class Client {
 		finally {
 			if(clientSocket != null && !clientSocket.isClosed()) {
 				try {
-					clientSocket.shutdownOutput();
-					clientSocket.shutdownInput();
 					clientSocket.close();
 				}
 				catch(IOException e) {
@@ -288,7 +284,7 @@ public class Client {
 	}
 	
 	/**
-	 * check user is active or not to login
+	 * check user is active or not
 	 * @param username
 	 * @return
 	 * @throws IOException
@@ -301,11 +297,11 @@ public class Client {
 			while((fileLine = fileReader.readLine())!= null) {
 				if(username.equals(fileLine.split(" ")[0])) {
 					fileReader.close();
-					return false;
+					return true;
 				}
 			}
 			fileReader.close();
-			return true;
+			return false;
 		}
 		else return false;
 	}

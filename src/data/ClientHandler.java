@@ -3,6 +3,7 @@ package data;
 import java.net.*;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.io.*;
@@ -12,11 +13,11 @@ import java.io.*;
  */
 public class ClientHandler extends Thread {
 	Socket socket;
+
+	HashMap<String, Socket> activeUsersList; 
 	
 	BufferedReader inFromClient;
 	DataOutputStream outToClient;
-	
-	BufferedWriter outToServer;
 	
 	String command;
 	
@@ -27,31 +28,25 @@ public class ClientHandler extends Thread {
 	
 	String host;
 	String guest;
-	int hostPort;
-	int guestPort;
+	boolean accepted = false;
+	
 	String localhost = "localhost";
 	
-	int sendPort;
-	int receivePort;
-	
-	HashMap<String, Integer> activeUsersList = new HashMap<>(); 
-	
-	public ClientHandler (Socket socket) throws IOException {
+	public ClientHandler (Socket socket, HashMap<String, Socket> activeUsersList) throws IOException {
 		this.socket = socket;
+		this.activeUsersList = activeUsersList;
 	}
 	
-	public void run() throws RuntimeException{
-		while(true) {
-			try {
-				String username, passwort;
-				boolean isLogin = false;
-				
-				outToClient = new DataOutputStream(socket.getOutputStream());
-				
-				inFromClient = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-				
-				outToServer = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream()));
-				
+	public void run(){
+		try {
+			String username, passwort;
+			boolean isLogin = false;
+			
+			outToClient = new DataOutputStream(socket.getOutputStream());
+			
+			inFromClient = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+			
+			do {
 				command = inFromClient.readLine();
 				
 				if(command!= null) {
@@ -95,17 +90,12 @@ public class ClientHandler extends Thread {
 							outToClient.writeBytes("Passwort: " + '\n');
 							passwort = inFromClient.readLine();
 							User user = new User(username, passwort);
-							int userPort = getPort(socket.getRemoteSocketAddress());
 							
 							if(login(user)) {
 								outToClient.writeBytes("OK" + '\n');
 								
-								activeUsersList.put(user.getUsername(), userPort);
-								
-								String port = user.getUsername() +" " + String.valueOf(userPort);
-								saveActiveUser();
-								
-								outToClient.writeBytes(port + '\n');
+								activeUsersList.put(username, socket);
+								saveActiveUsersInFile();
 								
 								isLogin = true;
 								break;
@@ -121,13 +111,17 @@ public class ClientHandler extends Thread {
 						break;
 						
 					case "LO": case "Logout":
-						String portString = inFromClient.readLine();
-						int port = Integer.parseInt(portString);
 						
-						String name = getName(port);
-						//activeUsersList.remove(name);
-						//saveActiveUser();
-						logout(name);
+						String name = null;
+						
+						for(Map.Entry<String, Socket> i : activeUsersList.entrySet()) {
+							if(i.getValue().getRemoteSocketAddress().equals(socket.getRemoteSocketAddress()))
+								name = i.getKey();
+						}
+						
+						activeUsersList.remove(name);
+						
+						saveActiveUsersInFile();
 						outToClient.writeBytes("OK" + '\n');
 						
 						break;
@@ -136,37 +130,37 @@ public class ClientHandler extends Thread {
 						outToClient.writeBytes("Choose one active user to connect with form \"guestUsername\"." + '\n');
 						outToClient.writeBytes("List of active Users: " + getActiveUsersList() + '\n');
 						
+						String hostName = null;
+						
+						for(Map.Entry<String, Socket> i : activeUsersList.entrySet()) {
+							if(i.getValue().getRemoteSocketAddress().equals(socket.getRemoteSocketAddress()))
+								hostName = i.getKey();
+						}
+						
 						String guestName = inFromClient.readLine();
 						
 						outToClient.writeBytes("Connection confirm? \"Yes(Y)\" or \"No(N)\"" + '\n');
 						confirmCommand = inFromClient.readLine();
 						
-						switch (confirmCommand) {
-						case "Y": case "Yes":
+						if(confirmCommand.equals("Y") || confirmCommand.equals("Yes")) {
 							outToClient.writeBytes("Waiting the connection!" +'\n');
-							hostPort = getPort(socket.getRemoteSocketAddress());
-							guestPort = getPortnumber(guestName);
-							
-							outToClient.writeInt(hostPort);
-							outToClient.writeInt(guestPort);
-							
-							chat(hostPort, guestPort);
-							break;
-						case "N": case "No":
-							outToClient.writeBytes("Connect request is refused!" + '\n');
-							break;
+							sendInvite(hostName, guestName);
 						}
-						
+						else break;
 						
 						break;
 					}
-					
-					
 				}
-			} 
-			catch (Exception e) {
-				e.printStackTrace();
-			}
+				
+				//send the invite or next to client
+				outToClient.writeBytes("Next" + '\n'); 
+				
+			} while (!command.equals("LO") && !command.equals("Logout"));
+			
+			socket.close();
+		} 
+		catch (Exception e) {
+			e.printStackTrace();
 		}
 	}
 	
@@ -196,6 +190,24 @@ public class ClientHandler extends Thread {
 		}
 	}
 	
+	public void sendInvite(String senderName, String receiverName) throws IOException {
+		String confirm = null;
+		for (String username : activeUsersList.keySet()) {
+			if(username.equals(receiverName)) {
+				Socket socket = activeUsersList.get(username);
+				DataOutputStream output = new DataOutputStream(socket.getOutputStream());
+				BufferedReader input = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+				output.writeBytes("INVITE" + '\n');
+				output.writeBytes("Accept invite from " + senderName + "? \"Yes(Y)\" or \"No(N)\"" + '\n');
+				confirm = input.readLine();
+			}
+		}
+		
+		if(confirm.equals("Y") || confirm.equals("Yes"))
+			accepted = true;
+		else if (confirm.equals("N") || confirm.equals("No"))
+			accepted = false;
+	}
 	/**
 	 * Show the list of active users in string
 	 * @return string 
@@ -209,35 +221,6 @@ public class ClientHandler extends Thread {
 		return activeList;
 	}
 	
-	/**
-	 * get portnumber of user
-	 * @param user
-	 * @return portnumber
-	 */
-	public int getPortnumber(String user){
-		Integer num = null;
-		Set<Map.Entry<String, Integer>> setHashMap = activeUsersList.entrySet();
-		for(Map.Entry<String, Integer> i : setHashMap) {
-			if(i.getKey().equals(user))
-				num = i.getValue();
-		}
-		return num!= null ? num : 0;
-	}
-	
-	/**
-	 * get username of portnumber 
-	 * @param port
-	 * @return username
-	 */
-	public String getName(int port){
-		
-		Set<Map.Entry<String, Integer>> setHashMap = activeUsersList.entrySet();
-		for(Map.Entry<String, Integer> i : setHashMap) {
-			if(i.getValue() == port)
-				return i.getKey();
-		}
-		return null;
-	}
 	
 	/**
 	 * register new user
@@ -277,79 +260,20 @@ public class ClientHandler extends Thread {
 	}
 	
 	/**
-	 * save new active user in activeUsers.txt
+	 * save active users in activeUsers.txt
 	 * @throws IOException
 	 */
-	public void saveActiveUser() throws IOException{
-		Set<Map.Entry<String, Integer>> setHashMap = activeUsersList.entrySet();
+	public void saveActiveUsersInFile() throws IOException{
 		
-		fileWriter = new BufferedWriter(new FileWriter(activeUsersFile, true));
+		Set<Map.Entry<String, Socket>> setHashMap = activeUsersList.entrySet();
 		
-		for(Map.Entry<String, Integer> i : setHashMap) {
-			fileWriter.write(i.getKey() + " " + i.getValue());
+		fileWriter = new BufferedWriter(new FileWriter(activeUsersFile, false));
+		
+		for(Map.Entry<String, Socket> i : setHashMap) {
+			fileWriter.write(i.getKey() + " " + i.getValue().getRemoteSocketAddress());
 			fileWriter.newLine();
 		}
 		fileWriter.close();	
 	}
-	
-	/**
-	 * delete user from list of active users and file activeUsers.txt
-	 * @param name
-	 * @throws Exception
-	 */
-	public void logout(String name) throws Exception{
-		activeUsersList.remove(name);
-		
-		fileWriter = new BufferedWriter(new FileWriter(activeUsersFile, false));
-		
-		for(Map.Entry<String, Integer> i : activeUsersList.entrySet()) {
-			//System.out.println(i.getKey() + " " + i.getValue());
-			fileWriter.write(i.getKey() + " " + i.getValue());
-			fileWriter.newLine();
-		}
-		fileWriter.close();	
-		
-		/**
-		 * ArrayList <String> ports = new ArrayList <>();
-		fileReader = new BufferedReader(new FileReader(activeUsersFile));
-		
-		String lineReader = null;
-		
-		while((lineReader = fileReader.readLine())!= null) {
-			if(!lineReader.equals(s)) {
-				ports.add(lineReader);
-			}
-		}
-		
-		fileReader.close();
-		
-		fileWriter = new BufferedWriter(new FileWriter(activeUsersFile, false));
-		
-		for(int i = 0; i < ports.size(); i++) {
-			fileWriter.write(ports.get(i));
-			fileWriter.newLine();
-		}
-		fileWriter.flush();
-		fileWriter.close();
-		
-		 */
-		
-	}
-	
-	/**
-	 * get portnumber of a socket address
-	 * @param address
-	 * @return portnumber
-	 */
-	public int getPort(SocketAddress address) {
-	    return ((InetSocketAddress) address).getPort();
-	}
-	
-	/**
-	public String userAndAddress(User user, SocketAddress address) {
-		String string = user.getUsername() + " " + String.valueOf(getPort(socket.getRemoteSocketAddress()));
-		return string;
-	}
-	**/
 	
 }
